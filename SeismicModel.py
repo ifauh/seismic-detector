@@ -121,7 +121,7 @@ class SeismicModel():
 
       # assert self.model is a valid keras model
       # Finally, we train the model:
-      results = self.model.fit(x=self.x_train, y=self.y_train, shuffle=True, epochs=epochs, batch_size=self.batch_size)
+      results = self.model.fit(x=self.x_train, y=self.y_train, shuffle=True, epochs=epochs, batch_size=self.batch_size, steps_per_epoch=int(self.x_train.shape[0]/self.batch_size))
       self.isTrained = True
       return results
 
