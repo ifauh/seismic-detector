@@ -65,7 +65,7 @@ class SeismicModel():
       self.x_train = x
       self.y_train = y
       self.dsTrain = tf.data.Dataset.from_tensor_slices((x, y))
-      self.dsTrain = self.dsTrain.shuffle(self.dsTrain.cardinality()).batch(batch_size)
+      self.dsTrain = self.dsTrain.batch(batch_size)
 
     def SetTest(self, x:np.ndarray, y:np.ndarray=None):
       '''
@@ -121,7 +121,7 @@ class SeismicModel():
 
       # assert self.model is a valid keras model
       # Finally, we train the model:
-      results = self.model.fit(self.dsTrain, shuffle=True, epochs=epochs)
+      results = self.model.fit(x=self.x_train, y=self.y_train, shuffle=True, epochs=epochs, batch_size=self.batch_size)
       self.isTrained = True
       return results
 
