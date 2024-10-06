@@ -65,7 +65,7 @@ class SeismicModel():
       self.x_train = x
       self.y_train = y
       self.dsTrain = tf.data.Dataset.from_tensor_slices((x, y))
-      self.dsTrain = self.dsTrain.shuffle(batch_size*4).batch(batch_size)
+      self.dsTrain = self.dsTrain.shuffle(self.dsTrain.cardinality()).batch(batch_size)
 
     def SetTest(self, x:np.ndarray, y:np.ndarray=None):
       '''
