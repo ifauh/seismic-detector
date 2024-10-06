@@ -67,7 +67,7 @@ class SeismicModel():
       self.dsTrain = tf.data.Dataset.from_tensor_slices((x, y))
       self.dsTrain = self.dsTrain.shuffle(batch_size*4).batch(batch_size)
 
-    def SetTest(self, x:np.ndarray):
+    def SetTest(self, x:np.ndarray, y:np.ndarray=None):
       '''
       Method to receive the training examples
       x: tensor signal (input)
@@ -75,7 +75,8 @@ class SeismicModel():
       '''
       #self.dsTest = tf.data.Dataset.from_tensor_slices((x, y))
       self.x_test = x
-      self.y_test = np.zeros(x_test.shape)      # fill with predicted confidence of a seismic event starting at each element
+      self.y_test = y
+      self.y_hat = np.zeros(self.x_test.shape)      # fill with predicted confidence of a seismic event starting at each element
 
     def Predict(self):
       '''
@@ -85,13 +86,14 @@ class SeismicModel():
       assert isinstance(self.x_test, np.ndarray), "x_test is not a NumPy ndarray"
       assert self.isTrained, "Model must be trained"
 
-      N = self.input_shape[0]
       # just guess for now (with no real model)
-      #if self.model is None:
-      guess = rng.integers(low=0, high=N-1, size=self.y_test.shape[0])        
-      self.y_test[:,guess] = 1.0
-      #else:
-      #guess = self.model.predict(self.x_test)
+      if self.model is None:
+        N = self.input_shape[0]
+        guess = rng.integers(low=0, high=N-1, size=self.y_test.shape[0])        
+        self.y_hat[:,guess] = 1.0
+      else:
+        self.y_hat = self.model.predict(self.x_test)
+      return self.y_hat
 
     def Compile(self, lr=1e-3):
       '''
