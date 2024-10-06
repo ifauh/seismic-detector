@@ -5,19 +5,13 @@ Input: tensor signal
 Output: binary signal
 '''
 
-# +
+import copy
 import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torchinfo import summary
 
-import tensorflow as tf
-tf.compat.v1.disable_eager_execution()
-from tensorflow.keras.models import Model, load_model
-from tensorflow.keras.layers import Lambda, Input, Dense
-from tensorflow.keras.losses import mse, binary_crossentropy, KLDivergence
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras import backend as K
-
-
-# -
 
 def get_error_term(v1, v2, _rmse=True):
     if _rmse:
@@ -48,70 +42,140 @@ def vae_loss(z_mean, z_log_var):
       return total_loss
     return kl_divergence
 
+from torch.utils.data import Dataset, DataLoader
+
+
+
 class SeismicModel():
+    class Wide(nn.Module):
+      def __init__(self, input_dim, layer_dim):
+        super().__init__()
+        self.dense1 = nn.Linear(input_dim, layer_dim[0])
+        self.act1 = nn.ReLU()
+        self.dense2 = nn.Linear(layer_dim[0], layer_dim[1])
+        self.act2 = nn.ReLU()
+        self.dense3 = nn.Linear(layer_dim[1], layer_dim[2])
+        self.act3 = nn.ReLU()
+        self.output = nn.Linear(layer_dim[2], input_dim)
+        self.actFinal = nn.Sigmoid()
+
+      def forward(self, x):
+        x = self.act1(self.dense1(x))
+        x = self.act2(self.dense2(x))
+        x = self.act3(self.dense3(x))
+        x = self.actFinal(self.output(x))
+        return x
+
+    class TorchDataset(Dataset):
+      def __init__(self, data, labels):
+        self.data = torch.from_numpy(data)
+        self.labels = torch.from_numpy(labels)
+
+      def __getitem__(self, index):
+        return self.data[index], self.labels[index]
+
+      def __len__(self):
+        return len(self.data)
+    
     def __init__(self, name=None):
       assert name is not None, "You must supply a model name"
       self.name = name
       self.rng = np.random.default_rng()
       self.isTrained = False
 
-    def SetTrain(self, x:np.ndarray, y:np.ndarray, batch_size=8):
+    def SetTrain(self, x:np.ndarray, y:np.ndarray):
       '''
       Method to receive the training examples
       x: tensor signal (input)
       y: binary signal (input)
       '''
-      self.batch_size = batch_size
-      self.x_train = x
-      self.y_train = y
-      self.dsTrain = tf.data.Dataset.from_tensor_slices((x, y))
-      self.dsTrain = self.dsTrain.batch(batch_size)
+      self.trainset = self.TorchDataset(x.astype(np.float32), y.astype(np.float32))
+      self.xdim = x.shape
+      self.ydim = y.shape
 
+    def SetDataLoader(self, dataloader, xshape, yshape):
+      '''
+      Method to store a Pytorch DataLoader
+      dataloader: Pytorch DataLoader (input)
+      '''
+      self.dataloader = dataloader
+      self.xdim = xshape
+      self.ydim = yshape
+
+    def SetCollate(self, collate):
+      '''
+      Method to store a custom collating function
+      dataloader: collate (input)
+      '''
+      self.collate = collate
+        
     def SetTest(self, x:np.ndarray, y:np.ndarray=None):
       '''
       Method to receive the training examples
       x: tensor signal (input)
       y: binary signal (output)
       '''
-      #self.dsTest = tf.data.Dataset.from_tensor_slices((x, y))
-      self.x_test = x
-      self.y_test = y
-      self.y_hat = np.zeros(self.x_test.shape)      # fill with predicted confidence of a seismic event starting at each element
+      self.xdim = x.shape
+      if y is None:
+        self.testset = self.TorchDataset(x.astype(np.float32), np.zeros(x.shape, dtype=np.float32))
+        self.ydim = x.shape
+      else:
+        self.testset = self.TorchDataset(x.astype(np.float32), y.astype(np.float32))
+        self.ydim = y.shape
 
     def Predict(self):
       '''
       Method to generate predictions
       y: binary signal (output)
       '''
-      assert isinstance(self.x_test, np.ndarray), "x_test is not a NumPy ndarray"
+      #assert isinstance(self.x_test, np.ndarray), "x_test is not a NumPy ndarray"
       assert self.isTrained, "Model must be trained"
 
+      self.y_hat = []
+      test_dataloader = DataLoader(self.dataloader, batch_size=self.batch_size, shuffle=True,collate_fn=self.collate)
+      # fill yhat with predicted confidence of a seismic event starting at each element
       # just guess for now (with no real model)
       if self.model is None:
-        N = self.input_shape[0]
-        guess = rng.integers(low=0, high=N-1, size=self.y_test.shape[0])        
+        N = self.ydim[1]
+        guess = rng.integers(low=0, high=N-1, size=self.ydim[0])
+        self.y_hat = np.zeros(self.ydim[0])
         self.y_hat[:,guess] = 1.0
       else:
-        self.y_hat = self.model.predict(self.x_test)
-      return self.y_hat
+        self.model.eval()
+        with torch.no_grad():
+          for i, data in enumerate(test_dataloader):
+            inputs, labels_ohe, labels_bin = data
+            self.y_hat.append(self.model(inputs))
+      return np.vstack(self.y_hat)
 
-    def Compile(self, lr=1e-3):
+    def PredictOne(self, inputs):
+      '''
+      Method to generate predictions
+      y: binary signal (output)
+      '''
+      #assert isinstance(self.x_test, np.ndarray), "x_test is not a NumPy ndarray"
+      assert self.isTrained, "Model must be trained"
+
+      self.model.eval()
+      with torch.no_grad():
+        y_hat = self.model(inputs)
+      return y_hat
+
+    def Compile(self, lr=1e-3, batch_size=8):
       '''
       Compile the model
       '''
 
-      self.learning_rate = lr
-      # select the optimizer
-      opt = Adam(learning_rate=self.learning_rate)
-      #opt = optimizers.Adam(learning_rate=self.learning_rate)
-      #opt = optimizers.Adam(learning_rate=self.learning_rate, clipvalue=0.5)
-      #opt = optimizers.RMSprop(learning_rate=0.0001)
-      
+      self.learning_rate = lr     
+      self.batch_size = batch_size
       # compile the model
-      self.model.compile(optimizer='Adam', loss=vae_loss(self.z_mean, self.z_log_var))
+      # loss function and optimizer
+      self.loss_function = nn.BCELoss()  # binary cross entropy
+      self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
+ 
 
-      # summarize (print) the model architecture
-      self.model.summary()
+      # summarize (print) the model architecture    
+      summary(self.model, input_size=(self.batch_size, self.xdim[1]))
 
     def Train(self, epochs=10):
       '''
@@ -121,42 +185,55 @@ class SeismicModel():
 
       # assert self.model is a valid keras model
       # Finally, we train the model:
-      results = self.model.fit(self.dsTrain, epochs=epochs)
+ 
+      # Hold the best model
+      best_acc = - np.inf   # init to negative infinity
+      best_weights = None
+      self.history = {'loss': [], 'accuracy': [] }
+
+      train_dataloader = DataLoader(self.dataloader, batch_size=self.batch_size, shuffle=True,collate_fn=self.collate)
+
+      # Training loop
+      num_epochs = epochs
+      for epoch in range(num_epochs):
+        for i, data in enumerate(train_dataloader):
+          inputs, labels_ohe, labels_bin = data
+
+          # Zero the gradients
+          self.optimizer.zero_grad()
+
+          # Forward pass
+          outputs = self.model(inputs)
+
+          # Transform labels_ohe into tensor 
+          y_true = torch.tensor(np.vstack(labels_ohe))
+          #print('y_true: ', y_true.shape, y_true.dtype)
+          #print('outputs: ', outputs.shape, outputs.dtype)
+          # Calculate loss
+          loss = self.loss_function(outputs, y_true)
+          acc = (outputs == y_true).float().mean()
+
+          # Backward pass and optimization
+          loss.backward()
+          self.optimizer.step()
+
+          # Print progress (optional)
+          if i % 10 == 0:
+            print(f'Epoch: {epoch+1}, Batch: {i}, Loss: {loss.item()}')    
+          
+          self.history['loss'].append(loss.detach().numpy())
+          self.history['accuracy'].append(acc.detach().numpy())
+          last_loss = loss
+          last_acc = acc
+            
       self.isTrained = True
-      return results
+      return last_loss, last_acc
 
     def BuildModel(self, layer_dim=[64,32,16]):
       '''
       Method to construct the model architecture
       Sets self.model to the constructed model
       '''
-
-      self.input_shape = (self.x_train.shape[1],)
-      self.layer_dim = layer_dim
-      self.latent_dim = layer_dim[-1]
-
-      # encoder model
-      inputs = Input(shape=self.input_shape, name='encoder_input')
-      x = Dense(self.layer_dim[0], activation='relu')(inputs)
-      x = Dense(self.layer_dim[1], activation='relu')(x)
-      self.z_mean = Dense(self.latent_dim, name='z_mean')(x)
-      self.z_log_var = Dense(self.latent_dim, name='z_log_var')(x)
-      # use the reparameterization trick and get the output from the sample() function
-      z = Lambda(sample, output_shape=(self.latent_dim,), name='z')([self.z_mean, self.z_log_var])
-      self.encoder = Model(inputs, z, name='encoder')
-      self.encoder.summary()
-
-      # decoder model
-      latent_inputs = Input(shape=(self.latent_dim,), name='z_sampling')
-      x = Dense(self.layer_dim[1], activation='relu')(latent_inputs)
-      x = Dense(self.layer_dim[0], activation='sigmoid')(x)
-      outputs = Dense(self.input_shape[0], activation='sigmoid')(x)
-      # Instantiate the decoder model:
-      self.decoder = Model(latent_inputs, outputs, name='decoder')
-      self.decoder.summary()
-
-      # full VAE model
-      outputs = self.decoder(self.encoder(inputs))
-      self.model = Model(inputs, outputs, name=self.name)
+      self.model = self.Wide(self.xdim[1], layer_dim)
 
 
