@@ -10,8 +10,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torchinfo import summary
-
+#from torchinfo import summary
 
 def get_error_term(v1, v2, _rmse=True):
     if _rmse:
@@ -175,7 +174,7 @@ class SeismicModel():
  
 
       # summarize (print) the model architecture    
-      summary(self.model, input_size=(self.batch_size, self.xdim[1]))
+      #summary(self.model, input_size=(self.batch_size, self.xdim[1]))
 
     def Train(self, epochs=10):
       '''
