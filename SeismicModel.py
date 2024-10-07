@@ -160,6 +160,32 @@ class SeismicModel():
         y_hat = self.model(inputs)
       return y_hat
 
+    def SlidingWindowPredict(self, data):
+      testpred = []  
+      for i in range(len(data)):
+        x = data[i]
+        xlen = len(x)
+        offsets = xlen // self.xdim[1]
+        offsets *= 2
+        stride = xlen // offsets
+        #print('Checking %d positions with stride %d' %(offsets,stride))
+    
+        winmax = 0.0
+        signalidx = -1
+        for pos in range(offsets):
+          winoff = pos*stride
+          xwin = x[winoff:winoff+self.xdim[1]]
+          if len(xwin) == self.xdim[1]:
+            winpred = self.PredictOne(torch.tensor(xwin, dtype=torch.float32)).numpy()
+            winidx = np.argmax(winpred)
+            winamp = xwin[winidx]
+            if winamp > winmax:
+              winmax = winamp
+              signalidx = winidx + winoff
+              print('Amplitude %e at %d' %(winamp, signalidx))
+        testpred.append(signalidx)
+      return testpred
+
     def Compile(self, lr=1e-3, batch_size=8):
       '''
       Compile the model
