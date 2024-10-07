@@ -17,6 +17,6 @@ The Institute for Astronomy at the University of Hawaii in Honolulu sponsored th
 [Seismic Detection Across the Solar System](https://www.spaceappschallenge.org/nasa-space-apps-2024/challenges/seismic-detection-across-the-solar-system/)
 
 ## Our Approach
-![Pipeline Block Diagram](block_diagram.png)
+![Pipeline Block Diagram](pipeline_diagram.png)
 
 ## Results
