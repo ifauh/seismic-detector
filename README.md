@@ -10,7 +10,6 @@ The Institute for Astronomy at the University of Hawaii in Honolulu sponsored th
 -  Miranda
 -  Ahmad
 -  Muhammad
--  Divyanshu
 -  Curt
 
 ## The Seismic Detecetion Challenge
